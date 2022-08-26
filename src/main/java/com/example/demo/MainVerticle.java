@@ -16,14 +16,22 @@ import lombok.extern.log4j.Log4j2;
 public class MainVerticle extends AbstractVerticle {
 
     public final String ADDRESS = "ADDRESS";
-    public static MessageProducer<byte[]> sender;
-    public static MessageConsumer<byte[]> consumer;
+    public static MessageProducer<JsonObject> sender;
+    public static MessageConsumer<JsonObject> consumer;
 
 
     @Override
     public void start() {
         // Create a Router
         Router router = Router.router(vertx);
+
+        sender = vertx.eventBus().sender(ADDRESS, new DeliveryOptions().setLocalOnly(true));
+        consumer = vertx.eventBus().localConsumer(ADDRESS, msg -> {
+            JsonObject obj = msg.body();
+            log.info("Consumed message: Object name: {}, address: {}", obj.getString("name"), obj.getString("address"));
+        });
+
+        consumer.endHandler(v -> log.info("Consumer endHandler called"));
 
         // Mount the handler for all incoming requests at every path and HTTP method
         router.route().handler(context -> {
@@ -39,7 +47,8 @@ public class MainVerticle extends AbstractVerticle {
                     .put("address", address)
                     .put("message", "Hello " + name + " connected from " + address);
 
-            vertx.eventBus().send(ADDRESS, jsonObject);
+            //vertx.eventBus().send(ADDRESS, jsonObject);
+            sender.write(jsonObject);
 
             // Write a json response
             context.json(jsonObject);
@@ -54,13 +63,7 @@ public class MainVerticle extends AbstractVerticle {
                 // Print the port
                 .onSuccess(server -> log.info("HTTP server started on port " + server.actualPort()));
 
-        sender = vertx.eventBus().sender(ADDRESS, new DeliveryOptions().setLocalOnly(true));
-        consumer = vertx.eventBus().localConsumer(ADDRESS, msg -> {
-            JsonObject obj = JsonObject.mapFrom(msg.body());
-            log.info("Object name: {}, address: {}", obj.getString("name"), obj.getString("address"));
-        });
 
-        consumer.endHandler(v -> log.info("Consumer endHandler called"));
     }
 
     @Override
@@ -76,8 +79,8 @@ public class MainVerticle extends AbstractVerticle {
                         .onFailure(u -> {
                             log.info("Consumer unregister failed");
                             stopPromise.fail("Consumer unregister failed");
-                        });}
-                )
+                        });
+                })
                 .onFailure(v -> {
                     log.info("sender.close failed");
                     stopPromise.fail("sender.close failed");
